@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - Unreleased
+
+### Features
+
+- Open Excel / WPS / ODS workbooks: each sheet becomes a table via rusty-sheet `read_sheet`
+- Auto-install and load the `rusty_sheet` community extension (bundled `.duckdb_extension` preferred when present)
+- Manifest `file_extensions` for DuckDB and spreadsheet formats
+
+### Build
+
+- Bump bundled DuckDB to >= 1.4.2 (required by rusty-sheet)
+
 ## [0.2.1] - 2026-08-06
 
 ### Bug Fixes

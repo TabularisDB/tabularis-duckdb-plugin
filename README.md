@@ -35,6 +35,7 @@ This plugin enables Tabularis to work with DuckDB databases — both file-based 
 ## Features
 
 - **File-based & In-memory databases** — Open `.duckdb` files or work with ephemeral in-memory databases.
+- **Spreadsheet workbooks** — Open Excel (`.xls`/`.xlsx`/…), WPS (`.et`/`.ett`), or ODS files; each sheet is registered as a queryable table. The plugin auto-installs/loads the [rusty-sheet](https://github.com/redraiment/rusty-sheet) DuckDB extension (no manual `INSTALL`/`LOAD` required).
 - **Schema Inspection** — Browse tables, columns, primary keys, foreign keys, and indexes.
 - **View Management** — Create, alter, drop, and inspect views with full metadata.
 - **SQL Execution** — Run any SQL query with automatic pagination for SELECT statements.

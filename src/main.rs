@@ -1,15 +1,201 @@
 use base64::Engine;
 use duckdb::{types::Value, Connection};
 use serde_json::{json, Value as JsonValue};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Write};
+use std::path::{Path, PathBuf};
+
+/// Spreadsheet extensions handled via rusty_sheet (Excel / WPS / ODS).
+const SPREADSHEET_EXTENSIONS: &[&str] = &[
+    "xls", "xlsx", "xlsm", "xlsb", "xla", "xlam", "et", "ett", "ods",
+];
+
+fn is_spreadsheet_path(path: &str) -> bool {
+    if path.is_empty() || path == ":memory:" {
+        return false;
+    }
+    Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| {
+            SPREADSHEET_EXTENSIONS
+                .iter()
+                .any(|ext| e.eq_ignore_ascii_case(ext))
+        })
+        .unwrap_or(false)
+}
+
+fn sql_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn quote_ident(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn unique_view_name(raw: &str, used: &mut HashSet<String>) -> String {
+    let base = if raw.trim().is_empty() {
+        "Sheet".to_string()
+    } else {
+        raw.to_string()
+    };
+    let mut candidate = base.clone();
+    let mut n = 2u32;
+    while used.contains(&candidate.to_ascii_lowercase()) {
+        candidate = format!("{}_{}", base, n);
+        n += 1;
+    }
+    used.insert(candidate.to_ascii_lowercase());
+    candidate
+}
+
+/// Install/load rusty_sheet: bundled sidecar first, then community INSTALL.
+fn ensure_rusty_sheet(conn: &Connection) -> Result<(), String> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for name in ["rusty_sheet.duckdb_extension", "rusty-sheet.duckdb_extension"] {
+                let path = dir.join(name);
+                if path.is_file() {
+                    let path_str = path.to_string_lossy().replace('\\', "/");
+                    let load_sql = format!("LOAD {};", sql_string_literal(&path_str));
+                    match conn.execute_batch(&load_sql) {
+                        Ok(()) => {
+                            eprintln!("Loaded rusty_sheet from {}", path.display());
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            let msg = e.to_string();
+                            if msg.to_ascii_lowercase().contains("already") {
+                                return Ok(());
+                            }
+                            eprintln!(
+                                "Bundled rusty_sheet load failed ({}): {}",
+                                path.display(),
+                                msg
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Already loaded in this process?
+    if conn
+        .prepare("SELECT 1 FROM duckdb_functions() WHERE function_name = 'read_sheet' LIMIT 1")
+        .and_then(|mut s| {
+            let mut rows = s.query([])?;
+            Ok(rows.next()?.is_some())
+        })
+        .unwrap_or(false)
+    {
+        return Ok(());
+    }
+
+    if let Err(e) = conn.execute_batch("INSTALL rusty_sheet FROM community;") {
+        let msg = e.to_string();
+        if !msg.to_ascii_lowercase().contains("already") {
+            return Err(format!(
+                "Failed to install rusty_sheet from community: {}. \
+                 Ensure network access to DuckDB community extensions, \
+                 or place rusty_sheet.duckdb_extension next to the plugin binary.",
+                msg
+            ));
+        }
+    }
+
+    match conn.execute_batch("LOAD rusty_sheet;") {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.to_ascii_lowercase().contains("already") {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Failed to load rusty_sheet: {}. \
+                     The DuckDB build must be >= 1.4.2 and match the extension ABI.",
+                    msg
+                ))
+            }
+        }
+    }
+}
+
+fn list_sheet_names(conn: &Connection, workbook_path: &str) -> Result<Vec<String>, String> {
+    let path_lit = sql_string_literal(workbook_path);
+    let sql = format!(
+        "SELECT DISTINCT sheet_name FROM analyze_sheets([{path}]) ORDER BY sheet_name",
+        path = path_lit
+    );
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let iter = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let mut names = Vec::new();
+    for name in iter {
+        names.push(name.map_err(|e| e.to_string())?);
+    }
+    Ok(names)
+}
+
+fn register_workbook_views(conn: &Connection, workbook_path: &str) -> Result<(), String> {
+    ensure_rusty_sheet(conn)?;
+    let path_lit = sql_string_literal(workbook_path);
+    let sheets = list_sheet_names(conn, workbook_path)?;
+    let mut used = HashSet::new();
+
+    if sheets.is_empty() {
+        let view_name = unique_view_name("Sheet1", &mut used);
+        let sql = format!(
+            "CREATE OR REPLACE VIEW {view} AS \
+             SELECT * FROM read_sheet({path}, header=true, error_as_null=true);",
+            view = quote_ident(&view_name),
+            path = path_lit,
+        );
+        conn.execute_batch(&sql).map_err(|e| {
+            format!("Failed to register default sheet as view {:?}: {}", view_name, e)
+        })?;
+        return Ok(());
+    }
+
+    for sheet in sheets {
+        let view_name = unique_view_name(&sheet, &mut used);
+        let sheet_lit = sql_string_literal(&sheet);
+        let sql = format!(
+            "CREATE OR REPLACE VIEW {view} AS \
+             SELECT * FROM read_sheet({path}, sheet={sheet}, header=true, error_as_null=true);",
+            view = quote_ident(&view_name),
+            path = path_lit,
+            sheet = sheet_lit,
+        );
+        conn.execute_batch(&sql).map_err(|e| {
+            format!(
+                "Failed to register sheet {:?} as view {:?}: {}",
+                sheet, view_name, e
+            )
+        })?;
+    }
+    Ok(())
+}
 
 fn get_or_create_connection<'a>(
     connections: &'a mut HashMap<String, Connection>,
+    workbook_keys: &mut HashSet<String>,
     db_path: &str,
 ) -> Result<&'a mut Connection, String> {
     if !connections.contains_key(db_path) {
-        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        let conn = if is_spreadsheet_path(db_path) {
+            let path = PathBuf::from(db_path);
+            if !path.is_file() {
+                return Err(format!("Spreadsheet file not found: {}", db_path));
+            }
+            let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
+            register_workbook_views(&conn, db_path)?;
+            workbook_keys.insert(db_path.to_string());
+            conn
+        } else {
+            Connection::open(db_path).map_err(|e| e.to_string())?
+        };
         connections.insert(db_path.to_string(), conn);
     }
     Ok(connections.get_mut(db_path).unwrap())
@@ -19,6 +205,7 @@ fn main() {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     let mut connections: HashMap<String, Connection> = HashMap::new();
+    let mut workbook_keys: HashSet<String> = HashSet::new();
 
     for line in stdin.lock().lines() {
         let line = match line {
@@ -65,7 +252,11 @@ fn main() {
             .unwrap_or("main")
             .to_string();
 
-        let conn = match get_or_create_connection(&mut connections, &db_path) {
+        let conn = match get_or_create_connection(
+            &mut connections,
+            &mut workbook_keys,
+            &db_path,
+        ) {
             Ok(c) => c,
             Err(e) => {
                 send_error(
@@ -77,6 +268,7 @@ fn main() {
                 continue;
             }
         };
+        let is_workbook = workbook_keys.contains(&db_path);
 
         match method.as_str() {
             "test_connection" => {
@@ -91,7 +283,7 @@ fn main() {
             "get_schemas" => {
                 send_success(&mut stdout, id, json!(["main"]));
             }
-            "get_tables" => match get_tables(conn, &schema) {
+            "get_tables" => match get_tables(conn, &schema, is_workbook) {
                 Ok(v) => send_success(&mut stdout, id, v),
                 Err(e) => send_error(&mut stdout, id, -32001, &e),
             },
@@ -116,10 +308,18 @@ fn main() {
                     Err(e) => send_error(&mut stdout, id, -32004, &e),
                 }
             }
-            "get_views" => match get_views(conn, &schema) {
-                Ok(v) => send_success(&mut stdout, id, v),
-                Err(e) => send_error(&mut stdout, id, -32005, &e),
-            },
+            // Workbook connections expose sheets as tables (views under the hood);
+            // hide them from the Views explorer to avoid duplicates.
+            "get_views" => {
+                if is_workbook {
+                    send_success(&mut stdout, id, json!([]));
+                } else {
+                    match get_views(conn, &schema) {
+                        Ok(v) => send_success(&mut stdout, id, v),
+                        Err(e) => send_error(&mut stdout, id, -32005, &e),
+                    }
+                }
+            }
             "get_view_definition" => {
                 let view_name = params
                     .get("view_name")
@@ -267,7 +467,7 @@ fn main() {
                     Err(e) => send_error(&mut stdout, id, -32015, &e),
                 }
             }
-            "get_schema_snapshot" => match get_schema_snapshot(conn, &schema) {
+            "get_schema_snapshot" => match get_schema_snapshot(conn, &schema, is_workbook) {
                 Ok(v) => send_success(&mut stdout, id, v),
                 Err(e) => send_error(&mut stdout, id, -32016, &e),
             },
@@ -603,15 +803,19 @@ fn remove_order_by(query: &str) -> String {
 // Schema inspection
 // ---------------------------------------------------------------------------
 
-fn get_tables(conn: &Connection, schema: &str) -> Result<JsonValue, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT table_name \
-             FROM information_schema.tables \
-             WHERE table_schema = ? AND table_type = 'BASE TABLE' \
-             ORDER BY table_name",
-        )
-        .map_err(|e| e.to_string())?;
+fn get_tables(conn: &Connection, schema: &str, include_views: bool) -> Result<JsonValue, String> {
+    let sql = if include_views {
+        "SELECT table_name \
+         FROM information_schema.tables \
+         WHERE table_schema = ? AND table_type IN ('BASE TABLE', 'VIEW') \
+         ORDER BY table_name"
+    } else {
+        "SELECT table_name \
+         FROM information_schema.tables \
+         WHERE table_schema = ? AND table_type = 'BASE TABLE' \
+         ORDER BY table_name"
+    };
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
 
     let iter = stmt
         .query_map([schema], |row| {
@@ -1177,8 +1381,12 @@ fn get_all_foreign_keys_batch(conn: &Connection, schema: &str) -> Result<JsonVal
     Ok(json!(result))
 }
 
-fn get_schema_snapshot(conn: &Connection, schema: &str) -> Result<JsonValue, String> {
-    let tables_json = get_tables(conn, schema)?;
+fn get_schema_snapshot(
+    conn: &Connection,
+    schema: &str,
+    include_views: bool,
+) -> Result<JsonValue, String> {
+    let tables_json = get_tables(conn, schema, include_views)?;
     let table_names: Vec<String> = tables_json
         .as_array()
         .unwrap_or(&Vec::new())

@@ -1,8 +1,8 @@
 {
   "name": "duckdb",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "kind": "driver",
-  "description": "DuckDB local database",
+  "description": "DuckDB local database. Open .duckdb files or Excel/WPS/ODS workbooks (sheets become tables). Spreadsheet support auto-installs the rusty-sheet extension.",
   "icon": "https://raw.githubusercontent.com/TabularisDB/tabularis-duckdb-plugin/main/duckdb-logo.png",
   "engine": "duckdb",
   "paradigms": [
@@ -14,8 +14,21 @@
     "views": true,
     "routines": false,
     "file_based": true,
+    "file_extensions": [
+      "duckdb",
+      "xls",
+      "xlsx",
+      "xlsm",
+      "xlsb",
+      "xla",
+      "xlam",
+      "et",
+      "ett",
+      "ods"
+    ],
     "identifier_quote": "\"",
-    "alter_primary_key": false
+    "alter_primary_key": false,
+    "sql_dialect": "postgres"
   },
   "data_types": [
     {
