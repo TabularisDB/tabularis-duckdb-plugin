@@ -638,8 +638,8 @@ fn decode_blob_wire_format(value: &str, max_size: u64) -> Option<Vec<u8>> {
 
     // Format: "BLOB:<total_size>:<mime_type>:<base64_data>"
     let rest = value.strip_prefix("BLOB:")?;
-    let after_size = rest.splitn(2, ':').nth(1)?;
-    let base64_data = after_size.splitn(2, ':').nth(1)?;
+    let after_size = rest.split_once(':')?.1;
+    let base64_data = after_size.split_once(':')?.1;
     base64::engine::general_purpose::STANDARD
         .decode(base64_data)
         .ok()
@@ -1048,7 +1048,7 @@ fn run_select(conn: &Connection, query: &str) -> Result<(Vec<String>, Vec<JsonVa
     let col_count = rows.as_ref().map(|s| s.column_count()).unwrap_or(0);
     let column_names: Vec<String> = rows
         .as_ref()
-        .map(|s| s.column_names().into_iter().map(String::from).collect())
+        .map(|s| s.column_names().into_iter().collect())
         .unwrap_or_default();
 
     let mut rows_data: Vec<JsonValue> = Vec::new();
@@ -1339,7 +1339,10 @@ mod tests {
 
     #[test]
     fn date_values_are_iso_dates_and_null_stays_null() {
-        assert_eq!(duckdb_value_to_json(Value::Date32(20_699)), json!("2026-09-03"));
+        assert_eq!(
+            duckdb_value_to_json(Value::Date32(20_699)),
+            json!("2026-09-03")
+        );
         assert_eq!(duckdb_value_to_json(Value::Date32(-1)), json!("1969-12-31"));
         assert_eq!(duckdb_value_to_json(Value::Null), JsonValue::Null);
 
