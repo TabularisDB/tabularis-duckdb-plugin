@@ -79,3 +79,9 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # RUSTSEC-2026-0235 affects rkyv 0.7.46, present only because
+          # rust_decimal (via duckdb) declares an optional rkyv feature. This
+          # plugin does not enable it (`cargo tree -i rkyv --target all` has
+          # no path), so no rkyv code is compiled into the shipped binary.
+          # Re-check whenever duckdb or rust_decimal is upgraded.
+          ignore: RUSTSEC-2026-0235
