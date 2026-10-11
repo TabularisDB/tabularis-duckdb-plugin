@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-10-11
+
+### Bug Fixes
+
+- *(query)* Serialize DuckDB DATE as ISO string (#10) by @vivekyarra in [#10](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/10)
+- *(manifest)* Add stable id and human-readable display name by @debba
+
+### Features
+
+- Expose DuckDB metadata comments (#9) by @debba in [#9](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/9)
 ## [0.2.1] - 2026-08-06
 
 ### Bug Fixes
