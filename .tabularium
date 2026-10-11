@@ -1,5 +1,6 @@
 {
-  "name": "duckdb",
+  "id": "duckdb",
+  "name": "DuckDB",
   "version": "0.2.1",
   "kind": "driver",
   "description": "DuckDB local database",
