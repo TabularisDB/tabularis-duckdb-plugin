@@ -1293,7 +1293,13 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
         Value::Timestamp(_, t) => json!(t),
         Value::Text(v) => json!(v),
         Value::Blob(v) => json!(format!("Blob({} bytes)", v.len())),
-        Value::Date32(v) => json!(v),
+        Value::Date32(days) => {
+            let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("valid epoch");
+            match epoch.checked_add_signed(chrono::Duration::days(i64::from(days))) {
+                Some(date) => json!(date.format("%Y-%m-%d").to_string()),
+                None => json!(days),
+            }
+        }
         Value::Time64(_, t) => json!(t),
         Value::Interval {
             months,
@@ -1330,6 +1336,18 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn date_values_are_iso_dates_and_null_stays_null() {
+        assert_eq!(duckdb_value_to_json(Value::Date32(20_699)), json!("2026-09-03"));
+        assert_eq!(duckdb_value_to_json(Value::Date32(-1)), json!("1969-12-31"));
+        assert_eq!(duckdb_value_to_json(Value::Null), JsonValue::Null);
+
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+        let result = execute_query(&conn, "SELECT make_date(2026, 9, 3) AS date_value", None, 1)
+            .expect("query date value");
+        assert_eq!(result["rows"][0][0], json!("2026-09-03"));
+    }
 
     const TABLE_COMMENT: &str = "Owner's résumé\n第二行";
     const COLUMN_COMMENT: &str = "Column's café\n次";

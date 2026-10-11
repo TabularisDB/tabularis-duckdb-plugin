@@ -9,3 +9,4 @@ serde_json = "1.0"
 duckdb = { version = "1.1.1", features = ["bundled"] }
 log = "0.4"
 base64 = "0.22"
+chrono = "0.4"
