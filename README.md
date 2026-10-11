@@ -1,12 +1,13 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/debba/tabularis/main/public/logo-sm.png" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/debba/tabularis/main/public/logo-sm.png" alt="Tabularis logo" width="120" height="120" />
 </div>
 
 # tabularis-duckdb-plugin
+
 <p align="center">
 
-![](https://img.shields.io/github/release/debba/tabularis-duckdb-plugin.svg?style=flat)
-![](https://img.shields.io/github/downloads/debba/tabularis-duckdb-plugin/total.svg?style=flat)
+![Latest release](https://img.shields.io/github/release/debba/tabularis-duckdb-plugin.svg?style=flat)
+![Downloads](https://img.shields.io/github/downloads/debba/tabularis-duckdb-plugin/total.svg?style=flat)
 ![Build & Release](https://github.com/debba/tabularis-duckdb-plugin/workflows/Release/badge.svg)
 [![Discord](https://img.shields.io/discord/1502944695808950282?color=5865F2&logo=discord&logoColor=white)](https://discord.com/invite/K2hmhfHRSt)
 
@@ -70,11 +71,11 @@ If your version of Tabularis supports plugin management, the DuckDB plugin can b
 2. Extract the archive.
 3. Copy `tabularis-duckdb-plugin` (or `tabularis-duckdb-plugin.exe` on Windows) and `.tabularium` into the Tabularis plugins directory:
 
-| OS | Plugins Directory |
-|---|---|
-| **Linux** | `~/.local/share/tabularis/plugins/duckdb/` |
-| **macOS** | `~/Library/Application Support/com.debba.tabularis/plugins/duckdb/` |
-| **Windows** | `%APPDATA%\com.debba.tabularis\plugins\duckdb\` |
+   | OS | Plugins Directory |
+   |---|---|
+   | **Linux** | `~/.local/share/tabularis/plugins/duckdb/` |
+   | **macOS** | `~/Library/Application Support/com.debba.tabularis/plugins/duckdb/` |
+   | **Windows** | `%APPDATA%\com.debba.tabularis\plugins\duckdb\` |
 
 4. Restart Tabularis.
 

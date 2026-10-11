@@ -1,10 +1,16 @@
-use std::process::{Command, Stdio};
-use std::io::{Write, BufReader, BufRead};
 use serde_json::json;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Command, Stdio};
 
 fn main() {
     let mut child = Command::new("cargo")
-        .args(&["run", "--manifest-path", "plugins/duckdb/Cargo.toml", "--bin", "tabularis-duckdb-plugin"])
+        .args([
+            "run",
+            "--manifest-path",
+            "plugins/duckdb/Cargo.toml",
+            "--bin",
+            "tabularis-duckdb-plugin",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
@@ -52,7 +58,7 @@ fn main() {
                 "query": "SELECT [1, 2, 3] as lst, {'a': 1, 'b': 2} as strct;"
             },
             "id": 4
-        })
+        }),
     ];
 
     for req in requests {
@@ -63,7 +69,7 @@ fn main() {
         stdin.flush().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
-    
+
     drop(stdin);
     child.wait().unwrap();
 }
