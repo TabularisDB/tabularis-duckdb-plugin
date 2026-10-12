@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-10-12
+
+### Bug Fixes
+
+- *(deps)* Update rand to 0.8.6 for RUSTSEC-2026-0097 by @debba in [#13](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/13)
+
+### Miscellaneous
+
+- Add CI and version suggestion workflows (#11) by @debba in [#11](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/11)
 ## [0.2.2] - 2026-10-11
 
 ### Bug Fixes
