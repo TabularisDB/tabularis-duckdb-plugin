@@ -35,7 +35,7 @@ This plugin enables Tabularis to work with DuckDB databases — both file-based 
 
 ## Features
 
-- **File-based & In-memory databases** — Open `.duckdb` files or work with ephemeral in-memory databases.
+- **File-based & In-memory databases** — Open `.duckdb` files or work with ephemeral in-memory databases. Pick **In-memory** in the connection form (or enter `:memory:` as the file path) for a temporary database; it lives in the plugin process and is discarded when Tabularis closes.
 - **Schema Inspection** — Browse tables, columns, primary keys, foreign keys, and indexes.
 - **View Management** — Create, alter, drop, and inspect views with full metadata.
 - **SQL Execution** — Run any SQL query with automatic pagination for SELECT statements.
