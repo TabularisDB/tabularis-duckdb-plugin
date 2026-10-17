@@ -1283,6 +1283,7 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
         Value::Int(v) => json!(v),
         Value::BigInt(v) => json!(v),
         Value::HugeInt(v) => json!(v.to_string()),
+        Value::UHugeInt(v) => json!(v.to_string()),
         Value::UTinyInt(v) => json!(v),
         Value::USmallInt(v) => json!(v),
         Value::UInt(v) => json!(v),
@@ -1293,6 +1294,7 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
         Value::Timestamp(_, t) => json!(t),
         Value::Text(v) => json!(v),
         Value::Blob(v) => json!(format!("Blob({} bytes)", v.len())),
+        Value::Geometry(v) => json!(format!("Geometry({} bytes)", v.len())),
         Value::Date32(days) => {
             let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("valid epoch");
             match epoch.checked_add_signed(chrono::Duration::days(i64::from(days))) {
@@ -1330,6 +1332,9 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
             JsonValue::Object(obj)
         }
         Value::Union(v) => duckdb_value_to_json(*v),
+        // `Value` is non-exhaustive: show variants added by future duckdb
+        // releases as text instead of failing the whole row.
+        other => json!(format!("{:?}", other)),
     }
 }
 
@@ -1350,6 +1355,22 @@ mod tests {
         let result = execute_query(&conn, "SELECT make_date(2026, 9, 3) AS date_value", None, 1)
             .expect("query date value");
         assert_eq!(result["rows"][0][0], json!("2026-09-03"));
+    }
+
+    #[test]
+    fn uhugeint_values_above_i128_are_exact_strings() {
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+        let result = execute_query(
+            &conn,
+            "SELECT 340282366920938463463374607431768211455::UHUGEINT AS max_value",
+            None,
+            1,
+        )
+        .expect("query uhugeint value");
+        assert_eq!(
+            result["rows"][0][0],
+            json!("340282366920938463463374607431768211455")
+        );
     }
 
     const TABLE_COMMENT: &str = "Owner's résumé\n第二行";
