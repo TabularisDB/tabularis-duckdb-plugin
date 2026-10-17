@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-10-17
+
+### Bug Fixes
+
+- *(deps)* Upgrade duckdb to 1.5 to clear security advisories (#16) by @debba in [#16](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/16)
+
+### Features
+
+- *(manifest)* Declare in-memory database support (#15) by @debba in [#15](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/15)
 ## [0.2.3] - 2026-10-12
 
 ### Bug Fixes
