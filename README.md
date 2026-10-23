@@ -1,5 +1,15 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/TabularisDB/tabularis/main/packages/web-ui/public/logo-sm.png" alt="Tabularis logo" width="120" height="120" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TabularisDB/tabularis/main/.github/assets/banner-dark.png" />
+    <img src="https://raw.githubusercontent.com/TabularisDB/tabularis/main/.github/assets/banner-light.png" alt="tabularis — the database client your AI agent can actually use" width="600" />
+  </picture>
+
+  <br/>
+
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/TabularisDB/tabularis-duckdb-plugin/main/assets/duckdb-banner-dark.png" />
+    <img src="https://raw.githubusercontent.com/TabularisDB/tabularis-duckdb-plugin/main/assets/duckdb-banner-light.png" alt="Native DuckDB support" width="600" />
+  </picture>
 </div>
 
 # tabularis-duckdb-plugin
