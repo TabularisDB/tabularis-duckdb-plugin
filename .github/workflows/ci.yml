@@ -36,6 +36,31 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  test-arm64:
+    name: ARM64 release build and tests
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -L /usr/aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compilation and emulation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu qemu-user
+
+      - name: Build release binaries
+        run: cargo build --locked --release --target aarch64-unknown-linux-gnu
+
+      - name: Run ARM64 tests under QEMU
+        run: cargo test --locked --release --target aarch64-unknown-linux-gnu
+
   validate-manifest:
     name: Validate .tabularium manifest
     runs-on: ubuntu-latest

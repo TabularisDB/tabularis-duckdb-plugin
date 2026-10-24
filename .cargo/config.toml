@@ -1,0 +1,4 @@
+[target.aarch64-unknown-linux-gnu]
+# libduckdb-sys 1.20000.0's whole-archive initializer can appear after
+# libduckdb.a. Seed its reference before GNU ld scans the engine archive.
+rustflags = ["-C", "link-arg=-Wl,--undefined=duckdb_register_static_extensions"]
