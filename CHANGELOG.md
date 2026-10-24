@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] - 2026-10-24
+
+### Bug Fixes
+
+- *(deps)* Upgrade duckdb to 2.0 and keep new files readable by 1.x (#18) by @debba in [#18](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/18)
+
+### Documentation
+
+- Update Tabularis logo URL to packages/web-ui/public by @debba
+- Use Tabularis banner and add native support banner in README by @debba
+
+### Miscellaneous
+
+- Drop the stale rkyv advisory ignore (#17) by @debba in [#17](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/17)
 ## [0.2.4] - 2026-10-17
 
 ### Bug Fixes

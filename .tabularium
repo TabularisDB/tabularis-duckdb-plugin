@@ -1,7 +1,7 @@
 {
   "id": "duckdb",
   "name": "DuckDB",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "kind": "driver",
   "description": "DuckDB local database",
   "icon": "https://raw.githubusercontent.com/TabularisDB/tabularis-duckdb-plugin/main/duckdb-logo.png",
