@@ -1,15 +1,30 @@
 use base64::Engine;
-use duckdb::{types::Value, Connection};
+use duckdb::{types::Value, Config, Connection};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
+
+// DuckDB 2.0 writes new files at the latest storage version, which DuckDB 1.x
+// cannot open. Pin the DuckDB 1.x default so files created here stay readable
+// by older DuckDB releases. Existing files keep their own storage version.
+const STORAGE_COMPATIBILITY_VERSION: &str = "v0.10.2";
+
+fn open_connection(db_path: &str) -> Result<Connection, String> {
+    let config = Config::default()
+        .with(
+            "storage_compatibility_version",
+            STORAGE_COMPATIBILITY_VERSION,
+        )
+        .map_err(|e| e.to_string())?;
+    Connection::open_with_flags(db_path, config).map_err(|e| e.to_string())
+}
 
 fn get_or_create_connection<'a>(
     connections: &'a mut HashMap<String, Connection>,
     db_path: &str,
 ) -> Result<&'a mut Connection, String> {
     if !connections.contains_key(db_path) {
-        let conn = Connection::open(db_path).map_err(|e| e.to_string())?;
+        let conn = open_connection(db_path)?;
         connections.insert(db_path.to_string(), conn);
     }
     Ok(connections.get_mut(db_path).unwrap())
@@ -1371,6 +1386,31 @@ mod tests {
             result["rows"][0][0],
             json!("340282366920938463463374607431768211455")
         );
+    }
+
+    // DuckDB file header: 8-byte checksum, "DUCK" magic, then the storage
+    // version as a little-endian u64.
+    fn storage_version(path: &std::path::Path) -> u64 {
+        let bytes = std::fs::read(path).expect("read database file");
+        assert_eq!(&bytes[8..12], b"DUCK");
+        u64::from_le_bytes(bytes[12..20].try_into().unwrap())
+    }
+
+    #[test]
+    fn new_files_stay_readable_by_duckdb_1x() {
+        let dir = std::env::temp_dir().join(format!("duckdb-compat-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("new.duckdb");
+        let _ = std::fs::remove_file(&path);
+
+        {
+            let conn = open_connection(path.to_str().unwrap()).expect("open file database");
+            conn.execute_batch("CREATE TABLE t AS SELECT 42 AS answer; CHECKPOINT;")
+                .expect("create table");
+        }
+
+        assert_eq!(storage_version(&path), 64);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     const TABLE_COMMENT: &str = "Owner's résumé\n第二行";
