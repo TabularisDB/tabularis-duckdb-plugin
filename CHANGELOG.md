@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - *(deps)* Upgrade duckdb to 2.0 and keep new files readable by 1.x (#18) by @debba in [#18](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/18)
+- *(build)* Resolve DuckDB static extension linking on Linux ARM64 (#19) by @debba in [#19](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/19)
 
 ### Documentation
 
