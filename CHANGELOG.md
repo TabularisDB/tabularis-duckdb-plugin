@@ -4,11 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.6] - 2026-11-09
 
-### Security
+### Bug Fixes
 
-- Upgrade Arrow to 60.1.0 to validate RunEndEncoded arrays and prevent
-  out-of-bounds reads (RUSTSEC-2026-0442, #20).
-
+- *(security)* Upgrade Arrow to 60.1.0 for v0.2.6 by @debba
 ## [0.2.5] - 2026-10-24
 
 ### Bug Fixes
