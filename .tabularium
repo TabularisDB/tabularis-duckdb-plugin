@@ -16,6 +16,13 @@
     "routines": false,
     "file_based": true,
     "in_memory": true,
+    "data_files": [
+      "csv",
+      "tsv",
+      "json",
+      "ndjson",
+      "parquet"
+    ],
     "identifier_quote": "\"",
     "alter_primary_key": false
   },

@@ -1,5 +1,8 @@
 use base64::Engine;
-use duckdb::{types::Value, Config, Connection};
+use duckdb::{
+    types::{TimeUnit, Value},
+    Config, Connection,
+};
 use serde_json::{json, Value as JsonValue};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
@@ -194,6 +197,15 @@ fn main() {
                 match drop_view(conn, view_name) {
                     Ok(()) => send_success(&mut stdout, id, json!(null)),
                     Err(e) => send_error(&mut stdout, id, -32010, &e),
+                }
+            }
+            "open_data_file" => {
+                let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                let format = params.get("format").and_then(|v| v.as_str()).unwrap_or("");
+                let table = params.get("table").and_then(|v| v.as_str()).unwrap_or("");
+                match open_data_file(conn, table, path, format) {
+                    Ok(()) => send_success(&mut stdout, id, json!(null)),
+                    Err(e) => send_error(&mut stdout, id, -32013, &e),
                 }
             }
             "get_routines" | "get_routine_parameters" => {
@@ -436,6 +448,61 @@ fn send_error(stdout: &mut io::Stdout, id: JsonValue, code: i32, message: &str) 
 
 fn escape_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn escape_string_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+// ---------------------------------------------------------------------------
+// Data files
+// ---------------------------------------------------------------------------
+
+/// Formats advertised by `capabilities.data_files` in the manifest. Keep the
+/// two lists in sync: Tabularis only offers a format the manifest declares.
+const DATA_FILE_FORMATS: &[&str] = &["csv", "tsv", "json", "ndjson", "parquet"];
+
+/// Table function call that scans `path` as `format`.
+fn data_file_relation(path: &str, format: &str) -> Result<String, String> {
+    let file = escape_string_literal(path);
+    match format {
+        "csv" => Ok(format!("read_csv({file}, auto_detect = true)")),
+        "tsv" => Ok(format!(
+            "read_csv({file}, delim = '\\t', auto_detect = true)"
+        )),
+        "json" => Ok(format!("read_json_auto({file})")),
+        "ndjson" => Ok(format!(
+            "read_json_auto({file}, format = 'newline_delimited')"
+        )),
+        "parquet" => Ok(format!("read_parquet({file})")),
+        other => Err(format!(
+            "Unsupported data file format '{}' (supported: {})",
+            other,
+            DATA_FILE_FORMATS.join(", ")
+        )),
+    }
+}
+
+/// Exposes a data file as a view named `table`.
+///
+/// The view scans the file on every query, so nothing is copied into the
+/// database and no handle stays open between queries. Opening the same name
+/// again replaces the previous view.
+fn open_data_file(conn: &Connection, table: &str, path: &str, format: &str) -> Result<(), String> {
+    if table.is_empty() {
+        return Err("Data file table name is required".to_string());
+    }
+    if path.is_empty() {
+        return Err("Data file path is required".to_string());
+    }
+    let relation = data_file_relation(path, format)?;
+    let sql = format!(
+        "CREATE OR REPLACE VIEW {} AS SELECT * FROM {}",
+        escape_identifier(table),
+        relation
+    );
+    conn.execute_batch(&sql)
+        .map_err(|e| format!("Failed to open data file: {}", e))
 }
 
 // ---------------------------------------------------------------------------
@@ -901,10 +968,12 @@ fn get_indexes(conn: &Connection, table_name: &str, schema: &str) -> Result<Json
 fn get_views(conn: &Connection, schema: &str) -> Result<JsonValue, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT table_name \
-             FROM information_schema.views \
-             WHERE table_schema = ? \
-             ORDER BY table_name",
+            "SELECT view_name \
+             FROM duckdb_views() \
+             WHERE schema_name = ? \
+               AND database_name = current_database() \
+               AND NOT internal \
+             ORDER BY view_name",
         )
         .map_err(|e| e.to_string())?;
 
@@ -1289,6 +1358,18 @@ fn get_schema_snapshot(conn: &Connection, schema: &str) -> Result<JsonValue, Str
 // Value conversion
 // ---------------------------------------------------------------------------
 
+/// Splits a DuckDB temporal value into whole seconds and nanoseconds.
+fn split_time_unit(unit: TimeUnit, value: i64) -> Option<(i64, u32)> {
+    let per_second: i64 = match unit {
+        TimeUnit::Second => 1,
+        TimeUnit::Millisecond => 1_000,
+        TimeUnit::Microsecond => 1_000_000,
+        TimeUnit::Nanosecond => 1_000_000_000,
+    };
+    let nanos = value.rem_euclid(per_second) * (1_000_000_000 / per_second);
+    Some((value.div_euclid(per_second), u32::try_from(nanos).ok()?))
+}
+
 fn duckdb_value_to_json(val: Value) -> JsonValue {
     match val {
         Value::Null => JsonValue::Null,
@@ -1306,7 +1387,12 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
         Value::Float(v) => json!(v),
         Value::Double(v) => json!(v),
         Value::Decimal(v) => json!(v.to_string()),
-        Value::Timestamp(_, t) => json!(t),
+        Value::Timestamp(unit, value) => match split_time_unit(unit, value)
+            .and_then(|(seconds, nanos)| chrono::DateTime::from_timestamp(seconds, nanos))
+        {
+            Some(timestamp) => json!(timestamp.format("%Y-%m-%d %H:%M:%S%.f").to_string()),
+            None => json!(value),
+        },
         Value::Text(v) => json!(v),
         Value::Blob(v) => json!(format!("Blob({} bytes)", v.len())),
         Value::Geometry(v) => json!(format!("Geometry({} bytes)", v.len())),
@@ -1317,7 +1403,15 @@ fn duckdb_value_to_json(val: Value) -> JsonValue {
                 None => json!(days),
             }
         }
-        Value::Time64(_, t) => json!(t),
+        Value::Time64(unit, value) => {
+            match split_time_unit(unit, value).and_then(|(seconds, nanos)| {
+                let seconds = u32::try_from(seconds).ok()?;
+                chrono::NaiveTime::from_num_seconds_from_midnight_opt(seconds, nanos)
+            }) {
+                Some(time) => json!(time.format("%H:%M:%S%.f").to_string()),
+                None => json!(value),
+            }
+        }
         Value::Interval {
             months,
             days,
@@ -1370,6 +1464,39 @@ mod tests {
         let result = execute_query(&conn, "SELECT make_date(2026, 9, 3) AS date_value", None, 1)
             .expect("query date value");
         assert_eq!(result["rows"][0][0], json!("2026-09-03"));
+    }
+
+    #[test]
+    fn timestamps_and_times_are_iso_text() {
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+        let row = |sql: &str| {
+            execute_query(&conn, sql, None, 1).expect("query temporal values")["rows"][0].clone()
+        };
+
+        assert_eq!(
+            row("SELECT TIMESTAMP '2026-07-13 03:33:28', \
+                 TIMESTAMP '2026-07-13 03:33:28.125', \
+                 TIMESTAMP '1969-12-31 23:59:59.5', \
+                 TIMESTAMP_S '2026-07-13 03:33:28', \
+                 TIMESTAMP_MS '2026-07-13 03:33:28.125', \
+                 TIMESTAMP_NS '2026-07-13 03:33:28.000000001'"),
+            json!([
+                "2026-07-13 03:33:28",
+                "2026-07-13 03:33:28.125",
+                "1969-12-31 23:59:59.500",
+                "2026-07-13 03:33:28",
+                "2026-07-13 03:33:28.125",
+                "2026-07-13 03:33:28.000000001"
+            ])
+        );
+        assert_eq!(
+            row("SELECT TIME '03:33:28', TIME '23:59:59.25', CAST(NULL AS TIMESTAMP)"),
+            json!(["03:33:28", "23:59:59.250", null])
+        );
+        assert_eq!(
+            duckdb_value_to_json(Value::Timestamp(TimeUnit::Second, i64::MAX)),
+            json!(i64::MAX)
+        );
     }
 
     #[test]
@@ -1466,5 +1593,133 @@ mod tests {
             json!(COLUMN_COMMENT)
         );
         assert_eq!(all_columns["plain_table"][0]["comment"], JsonValue::Null);
+    }
+
+    fn data_file_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("duckdb-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    fn view_rows(conn: &Connection, sql: &str) -> Vec<JsonValue> {
+        run_select(conn, sql).expect("run select").1
+    }
+
+    #[test]
+    fn open_data_file_exposes_each_format_as_a_view() {
+        let dir = data_file_dir("data-files");
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+
+        let csv = dir.join("orders.csv");
+        std::fs::write(&csv, "id,name\n1,alice\n2,bob\n").unwrap();
+        let tsv = dir.join("cities.tsv");
+        std::fs::write(&tsv, "id\tcity\n1\tRome\n").unwrap();
+        let json = dir.join("items.json");
+        std::fs::write(&json, r#"[{"a":1,"b":"x"},{"a":2,"b":"y"}]"#).unwrap();
+        let ndjson = dir.join("events.ndjson");
+        std::fs::write(&ndjson, "{\"a\":1}\n{\"a\":2}\n{\"a\":3}\n").unwrap();
+        let parquet = dir.join("metrics.parquet");
+        conn.execute_batch(&format!(
+            "COPY (SELECT 7 AS value) TO {} (FORMAT parquet)",
+            escape_string_literal(parquet.to_str().unwrap())
+        ))
+        .expect("write parquet fixture");
+
+        for (table, path, format) in [
+            ("orders", &csv, "csv"),
+            ("cities", &tsv, "tsv"),
+            ("items", &json, "json"),
+            ("events", &ndjson, "ndjson"),
+            ("metrics", &parquet, "parquet"),
+        ] {
+            open_data_file(&conn, table, path.to_str().unwrap(), format)
+                .unwrap_or_else(|e| panic!("open {format}: {e}"));
+        }
+
+        assert_eq!(
+            view_rows(&conn, "SELECT id, name FROM orders ORDER BY id"),
+            vec![json!([1, "alice"]), json!([2, "bob"])]
+        );
+        assert_eq!(
+            view_rows(&conn, "SELECT id, city FROM cities"),
+            vec![json!([1, "Rome"])]
+        );
+        assert_eq!(
+            view_rows(&conn, "SELECT b FROM items WHERE a = 2"),
+            vec![json!(["y"])]
+        );
+        assert_eq!(
+            view_rows(&conn, "SELECT count(*) FROM events"),
+            vec![json!([3])]
+        );
+        assert_eq!(
+            view_rows(&conn, "SELECT value FROM metrics"),
+            vec![json!([7])]
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn open_data_file_replaces_a_view_and_quotes_names_and_paths() {
+        let dir = data_file_dir("data-file's dir");
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+        let first = dir.join("first.csv");
+        std::fs::write(&first, "n\n1\n").unwrap();
+        let second = dir.join("second.csv");
+        std::fs::write(&second, "n\n2\n").unwrap();
+
+        open_data_file(&conn, "my \"file\"", first.to_str().unwrap(), "csv").expect("open first");
+        open_data_file(&conn, "my \"file\"", second.to_str().unwrap(), "csv").expect("reopen");
+
+        assert_eq!(
+            view_rows(&conn, "SELECT n FROM \"my \"\"file\"\"\""),
+            vec![json!([2])]
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn open_data_file_rejects_unknown_formats_and_missing_input() {
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+
+        let unsupported = open_data_file(&conn, "t", "/tmp/file.xlsx", "xlsx").unwrap_err();
+        assert!(unsupported.contains("Unsupported data file format 'xlsx'"));
+        assert!(open_data_file(&conn, "", "/tmp/file.csv", "csv").is_err());
+        assert!(open_data_file(&conn, "t", "", "csv").is_err());
+        assert!(
+            open_data_file(&conn, "t", "/nonexistent/missing.csv", "csv")
+                .unwrap_err()
+                .starts_with("Failed to open data file")
+        );
+    }
+
+    #[test]
+    fn manifest_declares_every_supported_data_file_format() {
+        let manifest: JsonValue =
+            serde_json::from_str(include_str!("../.tabularium")).expect("parse manifest");
+        let declared: Vec<&str> = manifest["capabilities"]["data_files"]
+            .as_array()
+            .expect("data_files capability")
+            .iter()
+            .map(|format| format.as_str().expect("format name"))
+            .collect();
+
+        assert_eq!(declared, DATA_FILE_FORMATS);
+        for format in declared {
+            assert!(data_file_relation("/tmp/file", format).is_ok());
+        }
+    }
+
+    #[test]
+    fn get_views_lists_user_views_without_duckdb_internal_ones() {
+        let conn = Connection::open_in_memory().expect("open in-memory database");
+        conn.execute_batch("CREATE VIEW recent AS SELECT 1 AS id")
+            .expect("create view");
+
+        let views = get_views(&conn, "main").expect("get views");
+
+        assert_eq!(views, json!([{"name": "recent", "definition": null}]));
     }
 }
