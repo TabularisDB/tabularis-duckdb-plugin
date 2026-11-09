@@ -205,7 +205,7 @@ fn main() {
                 let table = params.get("table").and_then(|v| v.as_str()).unwrap_or("");
                 match open_data_file(conn, table, path, format) {
                     Ok(()) => send_success(&mut stdout, id, json!(null)),
-                    Err(e) => send_error(&mut stdout, id, -32013, &e),
+                    Err(e) => send_error(&mut stdout, id, -32026, &e),
                 }
             }
             "get_routines" | "get_routine_parameters" => {
