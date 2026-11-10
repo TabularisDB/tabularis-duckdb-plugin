@@ -46,6 +46,7 @@ This plugin enables Tabularis to work with DuckDB databases — both file-based 
 ## Features
 
 - **File-based & In-memory databases** — Open `.duckdb` files or work with ephemeral in-memory databases. Pick **In-memory** in the connection form (or enter `:memory:` as the file path) for a temporary database; it lives in the plugin process and is discarded when Tabularis closes.
+- **Data files** — Open a CSV, TSV, JSON, NDJSON or Parquet file as a table with **Open data file…** in Tabularis. The file is exposed as a view that scans it on every query: nothing is copied and no handle stays open between queries.
 - **Schema Inspection** — Browse tables, columns, primary keys, foreign keys, and indexes.
 - **View Management** — Create, alter, drop, and inspect views with full metadata.
 - **SQL Execution** — Run any SQL query with automatic pagination for SELECT statements.
@@ -116,6 +117,7 @@ This architecture keeps the plugin fully isolated — no shared memory, no netwo
 | `create_view` | Create a new view |
 | `alter_view` | Modify an existing view |
 | `drop_view` | Drop a view |
+| `open_data_file` | Expose a CSV, TSV, JSON, NDJSON or Parquet file as a view |
 | `execute_query` | Execute SQL with pagination support |
 | `insert_record` | Insert a new row |
 | `update_record` | Update a cell by primary key |
