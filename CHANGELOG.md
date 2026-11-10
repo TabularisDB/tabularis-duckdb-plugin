@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-11-10
+
+### Features
+
+- Open data files as tables (CSV, TSV, JSON, NDJSON, Parquet) (#21) by @debba in [#21](https://github.com/TabularisDB/tabularis-duckdb-plugin/pull/21)
 ## [0.2.6] - 2026-11-09
 
 ### Bug Fixes
